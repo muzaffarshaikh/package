@@ -1,0 +1,125 @@
+name: Build and Push Dist to CDN
+
+on:
+  push:
+    branches:
+      - master
+
+jobs:
+  build-and-pr:
+    runs-on: ubuntu-latest
+
+    steps:
+      # Checkout package repo
+      - name: Checkout package repo
+        uses: actions/checkout@v4
+
+      # Setup Node.js
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run build
+        run: npm run build
+
+      # Use GitHub Script to push dist folder to cdn repo
+      - name: Push dist to CDN repo
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.CDN_REPO_TOKEN }}
+          script: |
+            const fs = require("fs");
+            const path = require("path");
+
+            const owner = "muzaffarshaikh";
+            const repo = "cdn";
+            const baseBranch = "master";
+            const folderPath = "platform/functions-sdk"; // adjust as needed
+
+            // 1. Get base branch SHA
+            const { data: baseRef } = await github.rest.git.getRef({
+              owner, repo,
+              ref: `heads/${baseBranch}`,
+            });
+            const baseSha = baseRef.object.sha;
+
+            // 2. Create new branch
+            const branchName = `auto/update-dist-${Date.now()}`;
+            await github.rest.git.createRef({
+              owner, repo,
+              ref: `refs/heads/${branchName}`,
+              sha: baseSha,
+            });
+
+            // Helper to create blob for file
+            async function createBlob(filePath) {
+              const content = fs.readFileSync(filePath);
+              const { data: blob } = await github.rest.git.createBlob({
+                owner, repo,
+                content: content.toString("base64"),
+                encoding: "base64",
+              });
+              return blob.sha;
+            }
+
+            // Recursively collect files from dist/
+            function getAllFiles(dir) {
+              return fs.readdirSync(dir).flatMap(f => {
+                const full = path.join(dir, f);
+                return fs.statSync(full).isDirectory()
+                  ? getAllFiles(full)
+                  : full;
+              });
+            }
+
+            const distFiles = getAllFiles("dist");
+
+            // 3. Create blobs for all dist files
+            const treeItems = [];
+            for (const file of distFiles) {
+              const sha = await createBlob(file);
+              const relPath = path.relative("dist", file);
+              treeItems.push({
+                path: `${folderPath}/${relPath}`,
+                mode: "100644",
+                type: "blob",
+                sha,
+              });
+            }
+
+            // 4. Create tree
+            const { data: tree } = await github.rest.git.createTree({
+              owner, repo,
+              base_tree: baseSha,
+              tree: treeItems,
+            });
+
+            // 5. Create commit
+            const { data: commit } = await github.rest.git.createCommit({
+              owner, repo,
+              message: "chore: update dist files",
+              tree: tree.sha,
+              parents: [baseSha],
+            });
+
+            // 6. Update ref
+            await github.rest.git.updateRef({
+              owner, repo,
+              ref: `heads/${branchName}`,
+              sha: commit.sha,
+            });
+
+            // 7. Create PR
+            await github.rest.pulls.create({
+              owner, repo,
+              head: branchName,
+              base: baseBranch,
+              title: "chore: update dist files",
+              body: "This PR updates dist files from package repo build.",
+            });
+
+            console.log(`PR created from ${branchName} to ${baseBranch}`);
