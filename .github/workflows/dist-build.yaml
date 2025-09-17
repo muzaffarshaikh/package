@@ -3,7 +3,7 @@ name: Build and Push Dist to CDN
 on:
   push:
     branches:
-      - master
+      - main
 
 jobs:
   build-and-pr:
@@ -37,7 +37,7 @@ jobs:
 
             const owner = "muzaffarshaikh";
             const repo = "cdn";
-            const baseBranch = "master";
+            const baseBranch = "main";
             const folderPath = "platform/functions-sdk"; // adjust as needed
 
             // 1. Get base branch SHA
