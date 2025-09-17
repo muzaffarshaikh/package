@@ -1,0 +1,16 @@
+{
+  "name": "my-simple-package",
+  "version": "1.0.0",
+  "description": "A simple Node.js package example",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc"
+  },
+  "keywords": [],
+  "author": "Your Name",
+  "license": "MIT",
+  "devDependencies": {
+    "typescript": "^5.6.3"
+  }
+}
